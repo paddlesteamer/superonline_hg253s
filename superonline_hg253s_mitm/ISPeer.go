@@ -793,32 +793,28 @@ func fragmentAndSend(label int, packet *gopacket.Packet, port BridgePort) (err e
 
 	ethLayer := (*packet).Layer(layers.LayerTypeEthernet)
 	if ethLayer == nil {
-		err = fmt.Errorf("Couldn't find ethernet layer, ignoring packet...\n")
-		return
+		return fmt.Errorf("Couldn't find ethernet layer, ignoring packet...\n")
 	}
 
 	eth, _ := ethLayer.(*layers.Ethernet)
 
 	pppoeLayer := (*packet).Layer(layers.LayerTypePPPoE)
 	if pppoeLayer == nil {
-		err = fmt.Errorf("Couldn't find PPPoE layer ignoring packet...\n")
-		return
+		return fmt.Errorf("Couldn't find PPPoE layer ignoring packet...\n")
 	}
 
 	pppoe, _ := pppoeLayer.(*layers.PPPoE)
 
 	ipLayer := (*packet).Layer(layers.LayerTypeIPv4)
 	if ipLayer == nil {
-		err = fmt.Errorf("Couldn't find ipv4 layer(ipv6 isn't supported), ignoring packet...\n")
-		return
+		return fmt.Errorf("Couldn't find ipv4 layer(ipv6 isn't supported), ignoring packet...\n")
 	}
 
 	ip, _ := ipLayer.(*layers.IPv4)
 
 	tcpLayer := (*packet).Layer(layers.LayerTypeTCP)
 	if tcpLayer == nil {
-		err = fmt.Errorf("Fragmentation is only supported for TCP. Ignoring...\n")
-		return
+		return fmt.Errorf("Fragmentation is only supported for TCP. Ignoring...\n")
 	}
 
 	tcp, _ := tcpLayer.(*layers.TCP)
@@ -849,8 +845,7 @@ func fragmentAndSend(label int, packet *gopacket.Packet, port BridgePort) (err e
 
 		err = port.handle.WritePacketData(outgoingPacket)
 		if err != nil {
-			err = fmt.Errorf("Error while forwarding fragmented packet to %s: %s\n", port.iface.Name, err.Error())
-			return err
+			return fmt.Errorf("Error while forwarding fragmented packet to %s: %s\n", port.iface.Name, err.Error())
 		}
 	}
 
@@ -860,17 +855,15 @@ func fragmentAndSend(label int, packet *gopacket.Packet, port BridgePort) (err e
 
 	outgoingPacket, err := generatePacket(label, eth, pppoe, ip, tcp, payload[i*maxPayloadSize:i*maxPayloadSize+lastPayloadSize])
 	if err != nil {
-		err = fmt.Errorf("Error while generating last fragmented packet for %s: %s\n", port.iface.Name, err.Error())
-		return
+		return fmt.Errorf("Error while generating last fragmented packet for %s: %s\n", port.iface.Name, err.Error())
 	}
 
 	err = port.handle.WritePacketData(outgoingPacket)
 	if err != nil {
-		err = fmt.Errorf("Error while forwarding last fragmented packet to %s: %s\n", port.iface.Name, err.Error())
-		return
+		return fmt.Errorf("Error while forwarding last fragmented packet to %s: %s\n", port.iface.Name, err.Error())
 	}
 
-	return
+	return nil
 }
 
 func bridge(outgoingPort BridgePort, incomingPort BridgePort, label int) {
