@@ -231,7 +231,6 @@ func getHeaderValue(payload []byte) string {
 }
 
 func extractHeaders(payload []byte) (header ACSHeader) {
-
 	c := 0
 	for i, b := range payload {
 		if b != '\n' {
@@ -545,7 +544,7 @@ func forwardToHTTPS(payload []byte, responseCh chan []byte) {
 
 	resPayload, err := generateHTTPResponse(resp)
 	if err != nil {
-		fmt.Printf("[-] Error while generating HTTP response: %d\n", err.Error())
+		fmt.Printf("[-] Error while generating HTTP response: %s\n", err.Error())
 		return
 	}
 
@@ -612,6 +611,7 @@ func handleTLSForward(bridgeCh chan *gopacket.Packet, outgoingPort BridgePort, i
 			}
 
 			fmt.Printf("[+] SYNACK sent\n")
+			continue
 
 		} else if tcp.CWR || tcp.ECE || tcp.NS || tcp.URG {
 			fmt.Printf("[-] Unsupported tcp flag received! Ignoring...\n")
@@ -622,100 +622,23 @@ func handleTLSForward(bridgeCh chan *gopacket.Packet, outgoingPort BridgePort, i
 			outgoingChain[connection.srcPort] = connection
 
 			fmt.Printf("[+] RST received. Connection is terminated\n")
+			continue
 
-		} else {
+		}
 
-			if tcp.ACK && connection.state == INITIALIZED {
-				connection.state = ESTABLISHED
-				fmt.Printf("[+] Threeway handshake completed\n")
-			} else if connection.state >= TERMINATED {
-				if connection.state == TERMINATED {
-					connection.state = COMPLETED
-					outgoingChain[connection.srcPort] = connection
-					continue
-				}
-
-				fmt.Printf("[-] Packet received for completed connection. Sending RST...\n")
-
-				packet, err := generateIncomingPacket(connection, false, false, false, true, nil) // RST
-				if err != nil {
-					fmt.Printf("[-] Error while generating packet: %s\n", err.Error())
-					continue
-				}
-
-				err = outgoingPort.handle.WritePacketData(packet)
-				if err != nil {
-					fmt.Printf("[-] Error while sending ACK packet: %s\n", err.Error())
-					continue
-				}
-
-				fmt.Printf("[+] RST sent\n")
-				continue
-			}
-
-			payload := tcp.Payload
-
-			connection.seq = tcp.Ack
-			connection.ack = tcp.Seq + uint32(len(payload))
-
-			if len(payload) == 0 && !tcp.FIN {
-				//fmt.Printf("[-] Zero payload tcp packet!\n%s\n", (*packet).Dump())
+		if tcp.ACK && connection.state == INITIALIZED {
+			connection.state = ESTABLISHED
+			fmt.Printf("[+] Threeway handshake completed\n")
+		} else if connection.state >= TERMINATED {
+			if connection.state == TERMINATED {
+				connection.state = COMPLETED
 				outgoingChain[connection.srcPort] = connection
 				continue
 			}
 
-			if tcp.FIN {
-				connection.ack++
+			fmt.Printf("[-] Packet received for completed connection. Sending RST...\n")
 
-				fin := false
-				if connection.state == ESTABLISHED {
-					connection.state = TERMINATED
-					fmt.Printf("[+] Received FIN from target. Connection is terminated, sending FINACK\n")
-
-					fin = true
-				} else if connection.state == TERMINATING {
-					connection.state = COMPLETED
-					tcp.FIN = false
-					fmt.Printf("[+] Received FINACK from target. Connection is terminated, sending ACK\n")
-				}
-
-				packet, err := generateIncomingPacket(connection, false, true, fin, false, nil)
-				if err != nil {
-					fmt.Printf("[-] Error while generating packet: %s\n", err.Error())
-					continue
-				}
-
-				err = outgoingPort.handle.WritePacketData(packet)
-				if err != nil {
-					fmt.Printf("[-] Error while sending packet: %s\n", err.Error())
-					continue
-				}
-
-				outgoingChain[connection.srcPort] = connection
-				fmt.Printf("[+] Sent\n")
-				continue
-			}
-
-			var responseCh chan []byte
-			if !tcp.FIN {
-				mPayload, err := processOutgoing(*packet, false)
-				if err != nil {
-					fmt.Printf("[-] Unable to modify payload, continuing with unmodified packet: %s\n", err.Error())
-					mPayload = payload
-				}
-
-				connection.responseBuffer = append(connection.responseBuffer, mPayload...)
-
-				if isCompleteHTTPPayload(connection.responseBuffer) {
-					responseCh = make(chan []byte)
-
-					go forwardToHTTPS(connection.responseBuffer, responseCh)
-
-					connection.state = WAITING
-				}
-			}
-
-			packet, err := generateIncomingPacket(connection, false, true, false, false, nil)
+			packet, err := generateIncomingPacket(connection, false, false, false, true, nil) // RST
 			if err != nil {
 				fmt.Printf("[-] Error while generating packet: %s\n", err.Error())
 				continue
@@ -727,66 +650,139 @@ func handleTLSForward(bridgeCh chan *gopacket.Packet, outgoingPort BridgePort, i
 				continue
 			}
 
-			outgoingChain[connection.srcPort] = connection
-			fmt.Printf("[+] Sent\n")
+			fmt.Printf("[+] RST sent\n")
+			continue
+		}
 
-			if connection.state != WAITING {
+		payload := tcp.Payload
+		connection.seq = tcp.Ack
+		connection.ack = tcp.Seq + uint32(len(payload))
+
+		if len(payload) == 0 && !tcp.FIN {
+			//fmt.Printf("[-] Zero payload tcp packet!\n%s\n", (*packet).Dump())
+			outgoingChain[connection.srcPort] = connection
+			continue
+		}
+
+		if tcp.FIN {
+			connection.ack++
+
+			fin := false
+			if connection.state == ESTABLISHED {
+				connection.state = TERMINATED
+				fmt.Printf("[+] Received FIN from target. Connection is terminated, sending FINACK\n")
+
+				fin = true
+			} else if connection.state == TERMINATING {
+				connection.state = COMPLETED
+				tcp.FIN = false
+				fmt.Printf("[+] Received FINACK from target. Connection is terminated, sending ACK\n")
+			}
+
+			packet, err := generateIncomingPacket(connection, false, true, fin, false, nil)
+			if err != nil {
+				fmt.Printf("[-] Error while generating packet: %s\n", err.Error())
 				continue
 			}
 
-			resPayload, ok := <-responseCh
+			err = outgoingPort.handle.WritePacketData(packet)
+			if err != nil {
+				fmt.Printf("[-] Error while sending packet: %s\n", err.Error())
+				continue
+			}
 
-			if !ok {
-				fmt.Printf("[-] Couldn't receive http response: %s\n", err.Error())
+			outgoingChain[connection.srcPort] = connection
+			fmt.Printf("[+] Sent\n")
+			continue
+		}
+
+		var responseCh chan []byte
+		if !tcp.FIN {
+			mPayload, err := processOutgoing(*packet, false)
+			if err != nil {
+				fmt.Printf("[-] Unable to modify payload, continuing with unmodified packet: %s\n", err.Error())
+				mPayload = payload
+			}
+
+			connection.responseBuffer = append(connection.responseBuffer, mPayload...)
+
+			if isCompleteHTTPPayload(connection.responseBuffer) {
+				responseCh = make(chan []byte)
+
+				go forwardToHTTPS(connection.responseBuffer, responseCh)
+
+				connection.state = WAITING
+			}
+		}
+
+		pkt, err := generateIncomingPacket(connection, false, true, false, false, nil)
+		if err != nil {
+			fmt.Printf("[-] Error while generating packet: %s\n", err.Error())
+			continue
+		}
+
+		err = outgoingPort.handle.WritePacketData(pkt)
+		if err != nil {
+			fmt.Printf("[-] Error while sending ACK packet: %s\n", err.Error())
+			continue
+		}
+
+		outgoingChain[connection.srcPort] = connection
+		fmt.Printf("[+] Sent\n")
+
+		if connection.state != WAITING {
+			continue
+		}
+
+		resPayload, ok := <-responseCh
+
+		if !ok {
+			fmt.Printf("[-] Couldn't receive http response: %s\n", err.Error())
+			// TODO: terminate connection
+			continue
+		}
+
+		data, err := generateIncomingPacket(connection, false, true, false, false, resPayload)
+		if err != nil {
+			fmt.Printf("[-] Error while generating packet from http response: %s\n", err.Error())
+			continue
+		}
+
+		if len(data) <= outgoingPort.iface.MTU {
+			err = outgoingPort.handle.WritePacketData(data)
+			if err != nil {
+				fmt.Printf("[-] Error while forwarding http response to %s: %s\n", outgoingPort.iface.Name, err.Error())
 				// TODO: terminate connection
 				continue
 			}
+		} else {
+			fmt.Printf("[+] Fragmenting packet...\n")
+			packet := gopacket.NewPacket(data, layers.LayerTypeEthernet, gopacket.Default)
 
-			data, err := generateIncomingPacket(connection, false, true, false, false, resPayload)
+			err = fragmentAndSend(OUTGOING, &packet, outgoingPort)
 			if err != nil {
-				fmt.Printf("[-] Error while generating packet from http response: %s\n", err.Error())
-				continue
+				fmt.Printf("[-] Error while fragmenting packet: %s\n", err.Error())
+				return
 			}
-
-			if len(data) <= outgoingPort.iface.MTU {
-				err = outgoingPort.handle.WritePacketData(data)
-				if err != nil {
-					fmt.Printf("[-] Error while forwarding http response to %s: %s\n", outgoingPort.iface.Name, err.Error())
-					// TODO: terminate connection
-					continue
-				}
-			} else {
-				fmt.Printf("[+] Fragmenting packet...\n")
-				packet := gopacket.NewPacket(data, layers.LayerTypeEthernet, gopacket.Default)
-
-				err = fragmentAndSend(OUTGOING, &packet, outgoingPort)
-				if err != nil {
-					fmt.Printf("[-] Error while fragmenting packet: %s\n", err.Error())
-					return
-				}
-			}
-
-			connection.seq += uint32(len(data))
-
-			data, err = generateIncomingPacket(connection, false, true, true, false, nil)
-			if err != nil {
-				fmt.Printf("[-] Error while generating FINACK packet: %s\n", err.Error())
-				continue
-			}
-
-			err = outgoingPort.handle.WritePacketData(data)
-			if err != nil {
-				fmt.Printf("[-] Error while sending FINACK to %s: %s\n", outgoingPort.iface.Name, err.Error())
-				continue
-			}
-
-			connection.state = TERMINATING
-			connection.seq++
-
-			outgoingChain[connection.srcPort] = connection
 		}
-	}
 
+		connection.seq += uint32(len(data))
+		data, err = generateIncomingPacket(connection, false, true, true, false, nil)
+		if err != nil {
+			fmt.Printf("[-] Error while generating FINACK packet: %s\n", err.Error())
+			continue
+		}
+
+		err = outgoingPort.handle.WritePacketData(data)
+		if err != nil {
+			fmt.Printf("[-] Error while sending FINACK to %s: %s\n", outgoingPort.iface.Name, err.Error())
+			continue
+		}
+
+		connection.state = TERMINATING
+		connection.seq++
+		outgoingChain[connection.srcPort] = connection
+	}
 }
 
 func fragmentAndSend(label int, packet *gopacket.Packet, port BridgePort) (err error) {
@@ -878,7 +874,7 @@ func bridge(outgoingPort BridgePort, incomingPort BridgePort, label int) {
 	for {
 		data, inf, err := outgoingPort.handle.ReadPacketData()
 		if err != nil {
-			fmt.Printf("[-] Error while reading from %s handle: %s\n", label, err.Error())
+			fmt.Printf("[-] Error while reading from %d handle: %s\n", label, err.Error())
 			continue
 		}
 
@@ -957,9 +953,7 @@ func bridge(outgoingPort BridgePort, incomingPort BridgePort, label int) {
 }
 
 func initHandle(iface *net.Interface, promisc bool) (handle *pcap.Handle, err error) {
-	handle, err = pcap.OpenLive(iface.Name, 65535, promisc, pcap.BlockForever)
-
-	return
+	return pcap.OpenLive(iface.Name, 65535, promisc, pcap.BlockForever)
 }
 
 func initPort(ifaceName string, mac net.HardwareAddr) (port BridgePort, err error) {
