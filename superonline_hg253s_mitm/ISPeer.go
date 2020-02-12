@@ -737,7 +737,7 @@ func handleTLSForward(bridgeCh chan *gopacket.Packet, outgoingPort BridgePort, i
 		resPayload, ok := <-responseCh
 
 		if !ok {
-			fmt.Printf("[-] Couldn't receive http response: %s\n", err.Error())
+			fmt.Printf("[-] Couldn't receive http response\n")
 			// TODO: terminate connection
 			continue
 		}
