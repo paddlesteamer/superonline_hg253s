@@ -218,7 +218,7 @@ func extractHeaders(payload []byte) ACSHeader {
 					break
 				}
 			} else if bytes.Equal(payload[i+2:i+15], []byte("ontent-Length")) {
-				cl, _ := strconv.ParseInt(getHeaderValue(payload[i+1:]), 10, 64)
+				cl, _ := strconv.ParseUint(getHeaderValue(payload[i+1:]), 10, 64)
 				header.ContentLength = uint64(cl)
 
 				c++
