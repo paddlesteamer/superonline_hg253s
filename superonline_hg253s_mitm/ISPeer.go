@@ -533,7 +533,7 @@ func handleTLSProxy(packetCh chan *gopacket.Packet, pppoeSessionId uint16, outgo
 
 		conn, exists := outgoingChain[uint16(tcp.SrcPort)]
 
-		if !exists {
+		if !exists { // new connection
 			if !tcp.SYN {
 				fmt.Printf("[-] The connection is not in its inital state but we don't know about it. Ignoring...\n")
 				// TODO: send RST packet
@@ -587,11 +587,12 @@ func handleTLSProxy(packetCh chan *gopacket.Packet, pppoeSessionId uint16, outgo
 
 		}
 
-		if tcp.ACK && conn.State == connection.INITIALIZED {
+		if tcp.ACK && conn.State == connection.INITIALIZED { // threeway handshake
 			conn.State = connection.ESTABLISHED
 
 			fmt.Printf("[+] Threeway handshake completed\n")
-		} else if conn.State >= connection.TERMINATED {
+
+		} else if conn.State >= connection.TERMINATED { // connection completed
 			if conn.State == connection.TERMINATED {
 				conn.State = connection.COMPLETED
 				outgoingChain[conn.SrcPort] = conn
@@ -620,12 +621,12 @@ func handleTLSProxy(packetCh chan *gopacket.Packet, pppoeSessionId uint16, outgo
 		conn.Seq = tcp.Ack
 		conn.Ack = tcp.Seq + uint32(len(payload))
 
-		if len(payload) == 0 && !tcp.FIN {
+		if len(payload) == 0 && !tcp.FIN { // ACK without payload received
 			outgoingChain[conn.SrcPort] = conn
 			continue
 		}
 
-		if tcp.FIN {
+		if tcp.FIN { // FIN received
 			conn.Ack++
 
 			fin := false
@@ -657,23 +658,22 @@ func handleTLSProxy(packetCh chan *gopacket.Packet, pppoeSessionId uint16, outgo
 			continue
 		}
 
+		// payload received
 		var responseCh chan []byte
-		if !tcp.FIN {
-			mPayload, err := processOutgoing(*packet, false)
-			if err != nil {
-				fmt.Printf("[-] Unable to modify payload, continuing with unmodified packet: %s\n", err.Error())
-				mPayload = payload
-			}
+		mPayload, err := processOutgoing(*packet, false)
+		if err != nil {
+			fmt.Printf("[-] Unable to modify payload, continuing with unmodified packet: %s\n", err.Error())
+			mPayload = payload
+		}
 
-			conn.ResponseBuffer = append(conn.ResponseBuffer, mPayload...)
+		conn.ResponseBuffer = append(conn.ResponseBuffer, mPayload...)
 
-			if isCompleteHTTPPayload(conn.ResponseBuffer) {
-				responseCh = make(chan []byte)
+		if isCompleteHTTPPayload(conn.ResponseBuffer) { // it is ok to forward responseBuffer now
+			responseCh = make(chan []byte)
 
-				go forwardToHTTPS(conn.ResponseBuffer, responseCh)
+			go forwardToHTTPS(conn.ResponseBuffer, responseCh)
 
-				conn.State = connection.WAITING
-			}
+			conn.State = connection.WAITING
 		}
 
 		packetData, err := generateIncomingPacket(conn, false, true, false, false, nil)
@@ -695,6 +695,8 @@ func handleTLSProxy(packetCh chan *gopacket.Packet, pppoeSessionId uint16, outgo
 			continue
 		}
 
+		// responseBuffer forwarded
+		// now wait response from https proxy
 		resPayload, ok := <-responseCh
 
 		if !ok {
