@@ -31,6 +31,7 @@ type Connection struct {
 	Seq            uint32
 	Ack            uint32
 	Window         uint16
+	PPPoESessionId uint16
 	ResponseBuffer []byte
 	OutgoingPort   BridgePort
 	IncomingPort   BridgePort
