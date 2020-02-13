@@ -19,10 +19,6 @@ import (
 	"ISPeer/connection"
 )
 
-var (
-	PPPoESession = uint16(0)
-)
-
 const (
 	OUTGOING = iota
 	INCOMING = iota
@@ -45,7 +41,7 @@ func generateIncomingPacket(conn connection.Connection, SYN bool, ACK bool, FIN 
 		Version:   1,
 		Type:      1,
 		Code:      layers.PPPoECodeSession,
-		SessionId: PPPoESession,
+		SessionId: conn.PPPoESessionId,
 	}
 
 	ppp := layers.PPP{
@@ -525,31 +521,12 @@ func forwardToHTTPS(payload []byte, responseCh chan []byte) {
 	close(responseCh)
 }
 
-func handleSYN(outgoingChain *map[uint16]connection.Connection, ip *layers.IPv4, tcp *layers.TCP, incomingPort connection.BridgePort, outgoingPort connection.BridgePort) error {
-
-	return nil
-}
-
-func sendRST(conn connection.Connection) error {
-	packetData, err := generateIncomingPacket(conn, false, false, false, true, nil) // RST
-	if err != nil {
-		return fmt.Errorf("Error while generating packet: %s\n", err.Error())
-	}
-
-	err = conn.OutgoingPort.Handle.WritePacketData(packetData)
-	if err != nil {
-		return fmt.Errorf("Error while sending ACK packet: %s\n", err.Error())
-	}
-
-	return nil
-}
-
-func handleTLSForward(bridgeCh chan *gopacket.Packet, outgoingPort connection.BridgePort, incomingPort connection.BridgePort) {
+func handleTLSProxy(packetCh chan *gopacket.Packet, pppoeSessionId uint16, outgoingPort connection.BridgePort, incomingPort connection.BridgePort) {
 
 	outgoingChain := make(map[uint16]connection.Connection)
 
 	for {
-		packet := <-bridgeCh
+		packet := <-packetCh
 
 		tcp, _ := (*packet).Layer(layers.LayerTypeTCP).(*layers.TCP)
 		ip, _ := (*packet).Layer(layers.LayerTypeIPv4).(*layers.IPv4)
@@ -574,6 +551,7 @@ func handleTLSForward(bridgeCh chan *gopacket.Packet, outgoingPort connection.Br
 				Seq:            tcp.Ack,
 				Ack:            tcp.Seq + 1,
 				Window:         tcp.Window,
+				PPPoESessionId: pppoeSessionId,
 				ResponseBuffer: make([]byte, 0),
 				IncomingPort:   incomingPort,
 				OutgoingPort:   outgoingPort,
@@ -622,9 +600,15 @@ func handleTLSForward(bridgeCh chan *gopacket.Packet, outgoingPort connection.Br
 
 			fmt.Printf("[-] Packet received for completed connection. Sending RST...\n")
 
-			err := sendRST(conn)
+			packetData, err := generateIncomingPacket(conn, false, false, false, true, nil) // RST
 			if err != nil {
-				fmt.Printf("[-] Error while sending RST: %s\n", err.Error())
+				fmt.Printf("[-] Error while generating packet: %s\n", err.Error())
+				continue
+			}
+
+			err = conn.OutgoingPort.Handle.WritePacketData(packetData)
+			if err != nil {
+				fmt.Printf("Error while sending ACK packet: %s\n", err.Error())
 				continue
 			}
 
@@ -839,14 +823,9 @@ func fragmentAndSend(label int, packet *gopacket.Packet, port connection.BridgeP
 	return nil
 }
 
-func bridge(outgoingPort connection.BridgePort, incomingPort connection.BridgePort, label int) {
+func bridge(outgoingPort connection.BridgePort, incomingPort connection.BridgePort, label int, packetCh chan *gopacket.Packet) {
 
-	var ch chan *gopacket.Packet
-
-	if label == OUTGOING {
-		ch = make(chan *gopacket.Packet)
-		go handleTLSForward(ch, outgoingPort, incomingPort)
-	}
+	pppoeSessionId := uint16(0)
 
 	for {
 		packetData, inf, err := outgoingPort.Handle.ReadPacketData()
@@ -861,13 +840,19 @@ func bridge(outgoingPort connection.BridgePort, incomingPort connection.BridgePo
 
 		packet := gopacket.NewPacket(packetData, layers.LayerTypeEthernet, gopacket.Default)
 
-		pppoeLayer := packet.Layer(layers.LayerTypePPPoE)
+		if label == INCOMING && pppoeSessionId == 0 {
+			pppoeLayer := packet.Layer(layers.LayerTypePPPoE)
 
-		if pppoeLayer != nil {
-			pppoe, _ := pppoeLayer.(*layers.PPPoE)
+			if pppoeLayer != nil {
+				pppoe, _ := pppoeLayer.(*layers.PPPoE)
 
-			PPPoESession = pppoe.SessionId
-			//fmt.Printf("[+] Retreived PPPoE Session ID: %d\n", PPPoESession)
+				if pppoe.Code == layers.PPPoECodePADS {
+					pppoeSessionId = pppoe.SessionId
+					fmt.Printf("[+] Retreived PPPoE Session ID: %d. Starting proxy...\n", pppoeSessionId)
+
+					go handleTLSProxy(packetCh, pppoeSessionId, outgoingPort, incomingPort)
+				}
+			}
 		}
 
 		ipLayer := packet.Layer(layers.LayerTypeIPv4)
@@ -885,7 +870,7 @@ func bridge(outgoingPort connection.BridgePort, incomingPort connection.BridgePo
 						return
 					}
 				} else if tcp.DstPort == 8016 {
-					ch <- &packet
+					packetCh <- &packet
 				}
 
 			} else if label == INCOMING && bytes.Equal(ip.SrcIP, []byte{85, 29, 13, 3}) {
@@ -989,8 +974,10 @@ func main() {
 		fmt.Print("[-] MTU values of interfaces are different. This can be a problem.")
 	}
 
+	packetCh := make(chan *gopacket.Packet)
+
 	fmt.Printf("[+] Done! Bridging...\n")
 
-	go bridge(outgoingPort, incomingPort, OUTGOING)
-	bridge(incomingPort, outgoingPort, INCOMING)
+	go bridge(outgoingPort, incomingPort, OUTGOING, packetCh)
+	bridge(incomingPort, outgoingPort, INCOMING, packetCh)
 }
