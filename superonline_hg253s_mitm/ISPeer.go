@@ -970,7 +970,7 @@ func main() {
 	defer incomingPort.Handle.Close()
 
 	if outgoingPort.Iface.MTU != incomingPort.Iface.MTU {
-		fmt.Print("[-] MTU values of interfaces are different. This can be a problem.")
+		fmt.Printf("[-] MTU values of interfaces are different. This can be a problem.\n")
 	}
 
 	packetCh := make(chan *gopacket.Packet)
