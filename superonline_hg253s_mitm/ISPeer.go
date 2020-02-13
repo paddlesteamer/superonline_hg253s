@@ -287,43 +287,43 @@ func extractBody(payload []byte, length uint64) string {
 }
 
 func generateHTTPResponse(resp *http.Response) ([]byte, error) {
-	data := []byte(resp.Proto)
+	payload := []byte(resp.Proto)
 
-	data = append(data, []byte{' '}...)
-	data = append(data, []byte(resp.Status)...)
-	data = append(data, []byte{'\r', '\n'}...)
+	payload = append(payload, []byte{' '}...)
+	payload = append(payload, []byte(resp.Status)...)
+	payload = append(payload, []byte{'\r', '\n'}...)
 
-	data = append(data, []byte("Date: ")...)
-	data = append(data, []byte(resp.Header.Get("Date"))...)
-	data = append(data, []byte{'\r', '\n'}...)
+	payload = append(payload, []byte("Date: ")...)
+	payload = append(payload, []byte(resp.Header.Get("Date"))...)
+	payload = append(payload, []byte{'\r', '\n'}...)
 
-	data = append(data, []byte("Server: Apache\r\n")...)
+	payload = append(payload, []byte("Server: Apache\r\n")...)
 
 	_, exists := resp.Header["Set-Cookie"]
 	if exists {
 		for _, cookie := range resp.Header["Set-Cookie"] {
-			data = append(data, []byte("Set-Cookie: ")...)
-			data = append(data, []byte(cookie)...)
-			data = append(data, []byte{'\r', '\n'}...)
+			payload = append(payload, []byte("Set-Cookie: ")...)
+			payload = append(payload, []byte(cookie)...)
+			payload = append(payload, []byte{'\r', '\n'}...)
 		}
 	}
 
-	data = append(data, []byte("Content-Length: ")...)
-	data = append(data, []byte(strconv.Itoa(int(resp.ContentLength)))...)
-	data = append(data, []byte{'\r', '\n'}...)
+	payload = append(payload, []byte("Content-Length: ")...)
+	payload = append(payload, []byte(strconv.Itoa(int(resp.ContentLength)))...)
+	payload = append(payload, []byte{'\r', '\n'}...)
 
-	data = append(data, []byte("Content-Type: text/xml; charset=UTF-8\r\n")...)
+	payload = append(payload, []byte("Content-Type: text/xml; charset=UTF-8\r\n")...)
 
-	data = append(data, []byte{'\r', '\n'}...)
+	payload = append(payload, []byte{'\r', '\n'}...)
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
 
-	data = append(data, body...)
+	payload = append(payload, body...)
 
-	return data, nil
+	return payload, nil
 }
 
 // TODO: use bytes.Index instead of manual search
@@ -537,12 +537,7 @@ func handleTLSForward(bridgeCh chan *gopacket.Packet, outgoingPort connection.Br
 		packet := <-bridgeCh
 
 		tcp, _ := (*packet).Layer(layers.LayerTypeTCP).(*layers.TCP)
-		ipLayer := (*packet).Layer(layers.LayerTypeIPv4)
-		if ipLayer == nil {
-			fmt.Printf("[-] Probably caught an IPv6 connection, not supported at the moment\n")
-			continue
-		}
-		ip, _ := ipLayer.(*layers.IPv4)
+		ip, _ := (*packet).Layer(layers.LayerTypeIPv4).(*layers.IPv4)
 
 		conn, exists := outgoingChain[uint16(tcp.SrcPort)]
 
@@ -570,12 +565,12 @@ func handleTLSForward(bridgeCh chan *gopacket.Packet, outgoingPort connection.Br
 			fmt.Printf("[+] SYN received. Initialized connection with proxy. Sending SYNACK...\n")
 			outgoingChain[conn.SrcPort] = conn
 
-			packet, err := generateIncomingPacket(conn, true, true, false, false, nil) // SYNACK
+			packetData, err := generateIncomingPacket(conn, true, true, false, false, nil) // SYNACK
 			if err != nil {
 				fmt.Printf("[-] Error while generating packet: %s\n", err.Error())
 				continue
 			}
-			err = outgoingPort.Handle.WritePacketData(packet)
+			err = outgoingPort.Handle.WritePacketData(packetData)
 			if err != nil {
 				fmt.Printf("[-] Error while sending SYNACK packet: %s\n", err.Error())
 				continue
@@ -599,6 +594,7 @@ func handleTLSForward(bridgeCh chan *gopacket.Packet, outgoingPort connection.Br
 
 		if tcp.ACK && conn.State == connection.INITIALIZED {
 			conn.State = connection.ESTABLISHED
+
 			fmt.Printf("[+] Threeway handshake completed\n")
 		} else if conn.State >= connection.TERMINATED {
 			if conn.State == connection.TERMINATED {
@@ -609,13 +605,13 @@ func handleTLSForward(bridgeCh chan *gopacket.Packet, outgoingPort connection.Br
 
 			fmt.Printf("[-] Packet received for completed connection. Sending RST...\n")
 
-			packet, err := generateIncomingPacket(conn, false, false, false, true, nil) // RST
+			packetData, err := generateIncomingPacket(conn, false, false, false, true, nil) // RST
 			if err != nil {
 				fmt.Printf("[-] Error while generating packet: %s\n", err.Error())
 				continue
 			}
 
-			err = outgoingPort.Handle.WritePacketData(packet)
+			err = outgoingPort.Handle.WritePacketData(packetData)
 			if err != nil {
 				fmt.Printf("[-] Error while sending ACK packet: %s\n", err.Error())
 				continue
@@ -650,13 +646,13 @@ func handleTLSForward(bridgeCh chan *gopacket.Packet, outgoingPort connection.Br
 				fmt.Printf("[+] Received FINACK from target. connection.Connection is terminated, sending ACK\n")
 			}
 
-			packet, err := generateIncomingPacket(conn, false, true, fin, false, nil)
+			packetData, err := generateIncomingPacket(conn, false, true, fin, false, nil)
 			if err != nil {
 				fmt.Printf("[-] Error while generating packet: %s\n", err.Error())
 				continue
 			}
 
-			err = outgoingPort.Handle.WritePacketData(packet)
+			err = outgoingPort.Handle.WritePacketData(packetData)
 			if err != nil {
 				fmt.Printf("[-] Error while sending packet: %s\n", err.Error())
 				continue
@@ -686,13 +682,13 @@ func handleTLSForward(bridgeCh chan *gopacket.Packet, outgoingPort connection.Br
 			}
 		}
 
-		incomingPacket, err := generateIncomingPacket(conn, false, true, false, false, nil)
+		packetData, err := generateIncomingPacket(conn, false, true, false, false, nil)
 		if err != nil {
 			fmt.Printf("[-] Error while generating packet: %s\n", err.Error())
 			continue
 		}
 
-		err = outgoingPort.Handle.WritePacketData(incomingPacket)
+		err = outgoingPort.Handle.WritePacketData(packetData)
 		if err != nil {
 			fmt.Printf("[-] Error while sending ACK packet: %s\n", err.Error())
 			continue
@@ -713,14 +709,14 @@ func handleTLSForward(bridgeCh chan *gopacket.Packet, outgoingPort connection.Br
 			continue
 		}
 
-		data, err := generateIncomingPacket(conn, false, true, false, false, resPayload)
+		packetData, err = generateIncomingPacket(conn, false, true, false, false, resPayload)
 		if err != nil {
 			fmt.Printf("[-] Error while generating packet from http response: %s\n", err.Error())
 			continue
 		}
 
-		if len(data) <= outgoingPort.Iface.MTU {
-			err = outgoingPort.Handle.WritePacketData(data)
+		if len(packetData) <= outgoingPort.Iface.MTU {
+			err = outgoingPort.Handle.WritePacketData(packetData)
 			if err != nil {
 				fmt.Printf("[-] Error while forwarding http response to %s: %s\n", outgoingPort.Iface.Name, err.Error())
 				// TODO: terminate connection
@@ -728,7 +724,7 @@ func handleTLSForward(bridgeCh chan *gopacket.Packet, outgoingPort connection.Br
 			}
 		} else {
 			fmt.Printf("[+] Fragmenting packet...\n")
-			packet := gopacket.NewPacket(data, layers.LayerTypeEthernet, gopacket.Default)
+			packet := gopacket.NewPacket(packetData, layers.LayerTypeEthernet, gopacket.Default)
 
 			err = fragmentAndSend(OUTGOING, &packet, outgoingPort)
 			if err != nil {
@@ -737,14 +733,14 @@ func handleTLSForward(bridgeCh chan *gopacket.Packet, outgoingPort connection.Br
 			}
 		}
 
-		conn.Seq += uint32(len(data))
-		data, err = generateIncomingPacket(conn, false, true, true, false, nil)
+		conn.Seq += uint32(len(packetData))
+		packetData, err = generateIncomingPacket(conn, false, true, true, false, nil)
 		if err != nil {
 			fmt.Printf("[-] Error while generating FINACK packet: %s\n", err.Error())
 			continue
 		}
 
-		err = outgoingPort.Handle.WritePacketData(data)
+		err = outgoingPort.Handle.WritePacketData(packetData)
 		if err != nil {
 			fmt.Printf("[-] Error while sending FINACK to %s: %s\n", outgoingPort.Iface.Name, err.Error())
 			continue
@@ -804,13 +800,13 @@ func fragmentAndSend(label int, packet *gopacket.Packet, port connection.BridgeP
 
 		seq += uint32(maxPayloadSize)
 
-		outgoingPacket, err := generatePacket(label, eth, pppoe, ip, tcp, payload[i*maxPayloadSize:i*maxPayloadSize+maxPayloadSize])
+		packetData, err := generatePacket(label, eth, pppoe, ip, tcp, payload[i*maxPayloadSize:i*maxPayloadSize+maxPayloadSize])
 		if err != nil {
 			err = fmt.Errorf("Error while generating fragmented packet for %s: %s\n", port.Iface.Name, err.Error())
 			return err
 		}
 
-		err = port.Handle.WritePacketData(outgoingPacket)
+		err = port.Handle.WritePacketData(packetData)
 		if err != nil {
 			return fmt.Errorf("Error while forwarding fragmented packet to %s: %s\n", port.Iface.Name, err.Error())
 		}
@@ -820,12 +816,12 @@ func fragmentAndSend(label int, packet *gopacket.Packet, port connection.BridgeP
 
 	tcp.Seq = seq
 
-	outgoingPacket, err := generatePacket(label, eth, pppoe, ip, tcp, payload[i*maxPayloadSize:i*maxPayloadSize+lastPayloadSize])
+	packetData, err := generatePacket(label, eth, pppoe, ip, tcp, payload[i*maxPayloadSize:i*maxPayloadSize+lastPayloadSize])
 	if err != nil {
 		return fmt.Errorf("Error while generating last fragmented packet for %s: %s\n", port.Iface.Name, err.Error())
 	}
 
-	err = port.Handle.WritePacketData(outgoingPacket)
+	err = port.Handle.WritePacketData(packetData)
 	if err != nil {
 		return fmt.Errorf("Error while forwarding last fragmented packet to %s: %s\n", port.Iface.Name, err.Error())
 	}
@@ -843,17 +839,17 @@ func bridge(outgoingPort connection.BridgePort, incomingPort connection.BridgePo
 	}
 
 	for {
-		data, inf, err := outgoingPort.Handle.ReadPacketData()
+		packetData, inf, err := outgoingPort.Handle.ReadPacketData()
 		if err != nil {
 			fmt.Printf("[-] Error while reading from %d handle: %s\n", label, err.Error())
 			continue
 		}
 
 		if label == INCOMING { // strip out vss-monitoring trailer
-			data = data[:len(data)-2]
+			packetData = packetData[:len(packetData)-2]
 		}
 
-		packet := gopacket.NewPacket(data, layers.LayerTypeEthernet, gopacket.Default)
+		packet := gopacket.NewPacket(packetData, layers.LayerTypeEthernet, gopacket.Default)
 
 		pppoeLayer := packet.Layer(layers.LayerTypePPPoE)
 
@@ -873,7 +869,7 @@ func bridge(outgoingPort connection.BridgePort, incomingPort connection.BridgePo
 
 				if tcp.DstPort == 8015 && len(tcp.Payload) > 0 {
 					fmt.Printf("[+] Caught outgoing!\n")
-					data, err = processOutgoing(packet, true)
+					packetData, err = processOutgoing(packet, true)
 					if err != nil {
 						fmt.Printf("[-] Couldn't modify intercepted package: %s\n", err.Error())
 						return
@@ -887,7 +883,7 @@ func bridge(outgoingPort connection.BridgePort, incomingPort connection.BridgePo
 
 				if tcp.SrcPort == 8015 && len(tcp.Payload) > 0 {
 					fmt.Printf("[+] Caught incoming!\n")
-					data, err = processIncoming(packet)
+					packetData, err = processIncoming(packet)
 					if err != nil {
 						fmt.Printf("[-] Couldn't modify intercepted package: %s\n", err.Error())
 						return
@@ -903,9 +899,9 @@ func bridge(outgoingPort connection.BridgePort, incomingPort connection.BridgePo
 		}
 
 		// rely on len(data) instead of inf.CaptureLength because vss-monitoring trailer may be stripped out
-		packetSize := len(data)
+		packetSize := len(packetData)
 		if packetSize <= incomingPort.Iface.MTU {
-			err = incomingPort.Handle.WritePacketData(data)
+			err = incomingPort.Handle.WritePacketData(packetData)
 			if err != nil {
 				fmt.Printf("[-] Error while forwarding to %s: %s\n", incomingPort.Iface.Name, err.Error())
 				return
@@ -934,8 +930,7 @@ func initPort(ifaceName string, mac net.HardwareAddr) (port connection.BridgePor
 		return
 	}
 
-	promisc := ifaceName != "lo"
-	handle, err := initHandle(iface, promisc)
+	handle, err := initHandle(iface, true)
 	if err != nil {
 		err = fmt.Errorf("Error while initializing handle: %s", err.Error())
 		return
@@ -947,35 +942,35 @@ func initPort(ifaceName string, mac net.HardwareAddr) (port connection.BridgePor
 
 func main() {
 
-	ifaces := os.Args[1:]
+	args := os.Args[1:]
 
-	if len(ifaces) != 4 {
+	if len(args) != 4 {
 		fmt.Printf("[-] Missing arguments\n")
 		return
 	}
 
-	fmt.Printf("[+] Configuring interfaces %s and %s...\n", ifaces[0], ifaces[2])
+	fmt.Printf("[+] Configuring interfaces %s and %s...\n", args[0], args[2])
 
-	inMac, err := net.ParseMAC(ifaces[1])
+	inMac, err := net.ParseMAC(args[1])
 	if err != nil {
 		fmt.Printf("[-] Invalid outgoing source MAC: %s\n", err.Error())
 		return
 	}
 
-	outMac, err := net.ParseMAC(ifaces[3])
+	outMac, err := net.ParseMAC(args[3])
 	if err != nil {
 		fmt.Printf("[-] Invalid incoming source MAC: %s\n", err.Error())
 		return
 	}
 
-	outgoingPort, err := initPort(ifaces[0], inMac)
+	outgoingPort, err := initPort(args[0], inMac)
 	if err != nil {
 		fmt.Printf("[-] Error while configuring input interface: %s\n", err.Error())
 		return
 	}
 	defer outgoingPort.Handle.Close()
 
-	incomingPort, err := initPort(ifaces[2], outMac)
+	incomingPort, err := initPort(args[2], outMac)
 	if err != nil {
 		fmt.Printf("[-] Error while configuring output interface: %s\n", err.Error())
 		return
