@@ -1,7 +1,6 @@
 package main
 
 import (
-	"ISPeer/connection"
 	"bytes"
 	"fmt"
 	"io/ioutil"
@@ -10,20 +9,17 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"time"
 
 	//"golang.org/x/net/proxy"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
+
+	"ISPeer/connection"
 )
 
 var (
-	forwarded = 0
-	blocked   = 0
-	caught    = 0
-
 	PPPoESession = uint16(0)
 )
 
@@ -914,8 +910,6 @@ func bridge(outgoingPort connection.BridgePort, incomingPort connection.BridgePo
 				return
 			}
 		}
-
-		forwarded++
 	}
 }
 
@@ -984,11 +978,5 @@ func main() {
 	fmt.Printf("[+] Done! Bridging...\n")
 
 	go bridge(outgoingPort, incomingPort, OUTGOING)
-	go bridge(incomingPort, outgoingPort, INCOMING)
-
-	for {
-		time.Sleep(5 * time.Second)
-		//	fmt.Printf("[+] Forwarded %d packets, blocked %d packets, caught %d packets\n", forwarded, blocked, caught)\
-	}
-
+	bridge(incomingPort, outgoingPort, INCOMING)
 }
