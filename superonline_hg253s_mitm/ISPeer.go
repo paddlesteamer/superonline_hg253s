@@ -465,7 +465,6 @@ func isCompleteHTTPPayload(payload []byte) bool {
 }
 
 func forwardToHTTPS(payload []byte, responseCh chan []byte) {
-
 	/*dial, err := proxy.SOCKS5("tcp4", "127.0.0.1:8080", nil, proxy.Direct)
 	if err != nil {
 		fmt.Printf("[-] Unable to set proxy: %s\n", err.Error())
@@ -477,6 +476,7 @@ func forwardToHTTPS(payload []byte, responseCh chan []byte) {
 	httpClient := http.Client{
 		Transport: &tr,
 	}*/
+
 	httpClient := http.Client{}
 
 	path := extractRequestPath(payload)
@@ -525,6 +525,25 @@ func forwardToHTTPS(payload []byte, responseCh chan []byte) {
 	close(responseCh)
 }
 
+func handleSYN(outgoingChain *map[uint16]connection.Connection, ip *layers.IPv4, tcp *layers.TCP, incomingPort connection.BridgePort, outgoingPort connection.BridgePort) error {
+
+	return nil
+}
+
+func sendRST(conn connection.Connection) error {
+	packetData, err := generateIncomingPacket(conn, false, false, false, true, nil) // RST
+	if err != nil {
+		return fmt.Errorf("Error while generating packet: %s\n", err.Error())
+	}
+
+	err = conn.OutgoingPort.Handle.WritePacketData(packetData)
+	if err != nil {
+		return fmt.Errorf("Error while sending ACK packet: %s\n", err.Error())
+	}
+
+	return nil
+}
+
 func handleTLSForward(bridgeCh chan *gopacket.Packet, outgoingPort connection.BridgePort, incomingPort connection.BridgePort) {
 
 	outgoingChain := make(map[uint16]connection.Connection)
@@ -544,7 +563,9 @@ func handleTLSForward(bridgeCh chan *gopacket.Packet, outgoingPort connection.Br
 				continue
 			}
 
-			conn = connection.Connection{
+			fmt.Printf("[+] SYN received. Initialized connection with proxy. Sending SYNACK...\n")
+
+			conn := connection.Connection{
 				SrcPort:        uint16(tcp.SrcPort),
 				DstPort:        uint16(tcp.DstPort),
 				SrcIP:          ip.SrcIP,
@@ -558,7 +579,6 @@ func handleTLSForward(bridgeCh chan *gopacket.Packet, outgoingPort connection.Br
 				OutgoingPort:   outgoingPort,
 			}
 
-			fmt.Printf("[+] SYN received. Initialized connection with proxy. Sending SYNACK...\n")
 			outgoingChain[conn.SrcPort] = conn
 
 			packetData, err := generateIncomingPacket(conn, true, true, false, false, nil) // SYNACK
@@ -568,11 +588,12 @@ func handleTLSForward(bridgeCh chan *gopacket.Packet, outgoingPort connection.Br
 			}
 			err = outgoingPort.Handle.WritePacketData(packetData)
 			if err != nil {
-				fmt.Printf("[-] Error while sending SYNACK packet: %s\n", err.Error())
+				fmt.Printf("Error while sending SYNACK packet: %s\n", err.Error())
 				continue
 			}
 
 			fmt.Printf("[+] SYNACK sent\n")
+
 			continue
 
 		} else if tcp.CWR || tcp.ECE || tcp.NS || tcp.URG {
@@ -601,15 +622,9 @@ func handleTLSForward(bridgeCh chan *gopacket.Packet, outgoingPort connection.Br
 
 			fmt.Printf("[-] Packet received for completed connection. Sending RST...\n")
 
-			packetData, err := generateIncomingPacket(conn, false, false, false, true, nil) // RST
+			err := sendRST(conn)
 			if err != nil {
-				fmt.Printf("[-] Error while generating packet: %s\n", err.Error())
-				continue
-			}
-
-			err = outgoingPort.Handle.WritePacketData(packetData)
-			if err != nil {
-				fmt.Printf("[-] Error while sending ACK packet: %s\n", err.Error())
+				fmt.Printf("[-] Error while sending RST: %s\n", err.Error())
 				continue
 			}
 
@@ -622,7 +637,6 @@ func handleTLSForward(bridgeCh chan *gopacket.Packet, outgoingPort connection.Br
 		conn.Ack = tcp.Seq + uint32(len(payload))
 
 		if len(payload) == 0 && !tcp.FIN {
-			//fmt.Printf("[-] Zero payload tcp packet!\n%s\n", (*packet).Dump())
 			outgoingChain[conn.SrcPort] = conn
 			continue
 		}
