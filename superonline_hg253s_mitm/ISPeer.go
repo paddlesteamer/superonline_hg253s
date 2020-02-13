@@ -912,25 +912,22 @@ func bridge(outgoingPort connection.BridgePort, incomingPort connection.BridgePo
 	}
 }
 
-func initHandle(iface *net.Interface, promisc bool) (handle *pcap.Handle, err error) {
+func initHandle(iface *net.Interface, promisc bool) (*pcap.Handle, error) {
 	return pcap.OpenLive(iface.Name, 65535, promisc, pcap.BlockForever)
 }
 
-func initPort(ifaceName string, mac net.HardwareAddr) (port connection.BridgePort, err error) {
+func initPort(ifaceName string, mac net.HardwareAddr) (connection.BridgePort, error) {
 	iface, err := net.InterfaceByName(ifaceName)
 	if err != nil {
-		err = fmt.Errorf("Error retrieving interface %s: %s", ifaceName, err.Error())
-		return
+		return connection.BridgePort{}, fmt.Errorf("Error retrieving interface %s: %s", ifaceName, err.Error())
 	}
 
 	handle, err := initHandle(iface, true)
 	if err != nil {
-		err = fmt.Errorf("Error while initializing handle: %s", err.Error())
-		return
+		return connection.BridgePort{}, fmt.Errorf("Error while initializing handle: %s", err.Error())
 	}
 
-	port = connection.BridgePort{iface, handle, mac}
-	return
+	return connection.BridgePort{iface, handle, mac}, nil
 }
 
 func main() {
