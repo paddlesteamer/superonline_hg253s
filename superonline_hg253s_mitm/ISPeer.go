@@ -67,7 +67,7 @@ type ACSHeader struct {
 	ContentLength uint64
 }
 
-func generateIncomingPacket(connection Connection, SYN bool, ACK bool, FIN bool, RST bool, payload []byte) (packet []byte, err error) {
+func generateIncomingPacket(connection Connection, SYN bool, ACK bool, FIN bool, RST bool, payload []byte) ([]byte, error) {
 	eth := layers.Ethernet{
 		SrcMAC:       connection.incomingPort.source,
 		DstMAC:       connection.outgoingPort.source,
@@ -137,7 +137,7 @@ func generateIncomingPacket(connection Connection, SYN bool, ACK bool, FIN bool,
 		FixLengths:       true,
 	}
 	buffer := gopacket.NewSerializeBuffer()
-	err = gopacket.SerializeLayers(buffer, options,
+	err := gopacket.SerializeLayers(buffer, options,
 		&eth,
 		&pppoe,
 		&ppp,
@@ -146,14 +146,13 @@ func generateIncomingPacket(connection Connection, SYN bool, ACK bool, FIN bool,
 		gopacket.Payload(payload))
 
 	if err != nil {
-		return
+		return nil, err
 	}
 
-	packet = buffer.Bytes()
-	return
+	return buffer.Bytes(), nil
 }
 
-func generatePacket(label int, eth *layers.Ethernet, pppoe *layers.PPPoE, ip *layers.IPv4, tcp *layers.TCP, payload []byte) (packet []byte, err error) {
+func generatePacket(label int, eth *layers.Ethernet, pppoe *layers.PPPoE, ip *layers.IPv4, tcp *layers.TCP, payload []byte) ([]byte, error) {
 	tcp.SetNetworkLayerForChecksum(ip)
 
 	vlan := layers.Dot1Q{
@@ -173,6 +172,7 @@ func generatePacket(label int, eth *layers.Ethernet, pppoe *layers.PPPoE, ip *la
 	}
 	buffer := gopacket.NewSerializeBuffer()
 
+	var err error
 	if label == OUTGOING {
 		err = gopacket.SerializeLayers(buffer, options,
 			eth,
@@ -193,11 +193,10 @@ func generatePacket(label int, eth *layers.Ethernet, pppoe *layers.PPPoE, ip *la
 	}
 
 	if err != nil {
-		return
+		return nil, err
 	}
 
-	packet = buffer.Bytes()
-	return
+	return buffer.Bytes(), nil
 }
 
 func getHeaderValue(payload []byte) string {
@@ -230,7 +229,13 @@ func getHeaderValue(payload []byte) string {
 	return string(payload[sidx:lidx])
 }
 
-func extractHeaders(payload []byte) (header ACSHeader) {
+func extractHeaders(payload []byte) ACSHeader {
+	header := ACSHeader{
+		Cookie:        "",
+		SOAPAction:    "",
+		ContentLength: 0,
+	}
+
 	c := 0
 	for i, b := range payload {
 		if b != '\n' {
@@ -275,11 +280,10 @@ func extractHeaders(payload []byte) (header ACSHeader) {
 
 	}
 
-	return
+	return header
 }
 
-func extractRequestPath(payload []byte) (path string) {
-	path = "/"
+func extractRequestPath(payload []byte) string {
 
 	idx := 5
 	for i, b := range payload[5:] {
@@ -289,12 +293,11 @@ func extractRequestPath(payload []byte) (path string) {
 		}
 	}
 
-	path = string(payload[5:idx])
-	return
+	return string(payload[5:idx])
 }
 
-func extractBody(payload []byte, length uint64) (body string) {
-	body = ""
+func extractBody(payload []byte, length uint64) string {
+
 	for i, b := range payload {
 		if b == '\r' {
 			if !bytes.Equal(payload[i+1:i+4], []byte("\n\r\n")) {
@@ -302,19 +305,18 @@ func extractBody(payload []byte, length uint64) (body string) {
 			}
 
 			if len(payload) < i+4+int(length) {
-				return
+				return ""
 			}
 
-			body = string(payload[i+4 : i+4+int(length)])
-			return
+			return string(payload[i+4 : i+4+int(length)])
 		}
 	}
 
-	return
+	return ""
 }
 
-func generateHTTPResponse(resp *http.Response) (data []byte, err error) {
-	data = []byte(resp.Proto)
+func generateHTTPResponse(resp *http.Response) ([]byte, error) {
+	data := []byte(resp.Proto)
 
 	data = append(data, []byte{' '}...)
 	data = append(data, []byte(resp.Status)...)
@@ -345,16 +347,16 @@ func generateHTTPResponse(resp *http.Response) (data []byte, err error) {
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	data = append(data, body...)
 
-	return
+	return data, nil
 }
 
 // TODO: use bytes.Index instead of manual search
-func processOutgoing(packet gopacket.Packet, wholePacket bool) (data []byte, err error) {
+func processOutgoing(packet gopacket.Packet, wholePacket bool) ([]byte, error) {
 
 	tcp := packet.Layer(layers.LayerTypeTCP).(*layers.TCP)
 
@@ -375,8 +377,7 @@ func processOutgoing(packet gopacket.Packet, wholePacket bool) (data []byte, err
 	}
 
 	if !wholePacket {
-		data = payload
-		return
+		return payload, nil
 	}
 
 	eth := packet.Layer(layers.LayerTypeEthernet).(*layers.Ethernet)
@@ -392,7 +393,7 @@ func processOutgoing(packet gopacket.Packet, wholePacket bool) (data []byte, err
 	}
 	buffer := gopacket.NewSerializeBuffer()
 
-	err = gopacket.SerializeLayers(buffer, options,
+	err := gopacket.SerializeLayers(buffer, options,
 		eth,
 		vlan,
 		pppoe,
@@ -402,15 +403,15 @@ func processOutgoing(packet gopacket.Packet, wholePacket bool) (data []byte, err
 		gopacket.Payload(payload))
 
 	if err != nil {
-		return
+		return nil, err
 	}
 
-	data = buffer.Bytes()
-	return
+	return buffer.Bytes(), nil
+
 }
 
 // TODO: use bytes.Index instead of manual search
-func processIncoming(packet gopacket.Packet) (data []byte, err error) {
+func processIncoming(packet gopacket.Packet) ([]byte, error) {
 	eth := packet.Layer(layers.LayerTypeEthernet).(*layers.Ethernet)
 	pppoe := packet.Layer(layers.LayerTypePPPoE).(*layers.PPPoE)
 	ppp := packet.Layer(layers.LayerTypePPP).(*layers.PPP)
@@ -447,7 +448,7 @@ func processIncoming(packet gopacket.Packet) (data []byte, err error) {
 	}
 	buffer := gopacket.NewSerializeBuffer()
 
-	err = gopacket.SerializeLayers(buffer, options,
+	err := gopacket.SerializeLayers(buffer, options,
 		eth,
 		pppoe,
 		ppp,
@@ -456,11 +457,10 @@ func processIncoming(packet gopacket.Packet) (data []byte, err error) {
 		gopacket.Payload(payload))
 
 	if err != nil {
-		return
+		return nil, err
 	}
 
-	data = buffer.Bytes()
-	return
+	return buffer.Bytes(), nil
 }
 
 func isCompleteHTTPPayload(payload []byte) bool {
@@ -785,7 +785,7 @@ func handleTLSForward(bridgeCh chan *gopacket.Packet, outgoingPort BridgePort, i
 	}
 }
 
-func fragmentAndSend(label int, packet *gopacket.Packet, port BridgePort) (err error) {
+func fragmentAndSend(label int, packet *gopacket.Packet, port BridgePort) error {
 
 	ethLayer := (*packet).Layer(layers.LayerTypeEthernet)
 	if ethLayer == nil {
