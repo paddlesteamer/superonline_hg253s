@@ -2,15 +2,15 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
 	"fmt"
 	"io/ioutil"
 	"math"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
-
-	//"golang.org/x/net/proxy"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -170,8 +170,9 @@ func getHeaderValue(payload []byte) string {
 		valueSide = false
 		sidxSet   = false
 	)
-	for lidx, b := range payload {
+	for i, b := range payload {
 		if b == '\n' || b == '\r' {
+			lidx = i
 			break
 		}
 
@@ -183,7 +184,7 @@ func getHeaderValue(payload []byte) string {
 				continue
 			}
 
-			sidx = lidx
+			sidx = i
 			sidxSet = true
 		}
 
@@ -205,7 +206,7 @@ func extractHeaders(payload []byte) ACSHeader {
 			continue
 		}
 
-		if len(payload) >= i+1 {
+		if len(payload) <= i+1 {
 			break
 		}
 
@@ -463,19 +464,16 @@ func isCompleteHTTPPayload(payload []byte) bool {
 }
 
 func forwardToHTTPS(payload []byte, responseCh chan []byte) {
-	/*dial, err := proxy.SOCKS5("tcp4", "127.0.0.1:8080", nil, proxy.Direct)
-	if err != nil {
-		fmt.Printf("[-] Unable to set proxy: %s\n", err.Error())
-	}
+
+	proxyURL, _ := url.Parse("socks5://127.0.0.1:8080")
 
 	tr := http.Transport{
-		Dial: dial,
+		Proxy:           http.ProxyURL(proxyURL),
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 	httpClient := http.Client{
 		Transport: &tr,
-	}*/
-
-	httpClient := http.Client{}
+	}
 
 	path := extractRequestPath(payload)
 
@@ -875,6 +873,7 @@ func bridge(outgoingPort connection.BridgePort, incomingPort connection.BridgePo
 					}
 				} else if tcp.DstPort == 8016 {
 					packetCh <- &packet
+					continue
 				}
 
 			} else if label == INCOMING && bytes.Equal(ip.SrcIP, []byte{85, 29, 13, 3}) {
