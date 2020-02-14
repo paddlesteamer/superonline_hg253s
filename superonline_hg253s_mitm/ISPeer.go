@@ -256,7 +256,7 @@ func extractRequestPath(payload []byte) string {
 		}
 	}
 
-	return string(payload[5:idx])
+	return string(payload[5 : 5+idx])
 }
 
 func extractBody(payload []byte, length uint64) string {
@@ -449,6 +449,8 @@ func isCompleteHTTPPayload(payload []byte) bool {
 		return false
 	}
 
+	lineEndIdx += idx
+
 	cl, err := strconv.ParseUint(string(payload[idx:lineEndIdx]), 10, 64)
 	if err != nil {
 		fmt.Printf("THIS!: %s\n", err.Error())
@@ -540,7 +542,7 @@ func handleTLSProxy(packetCh chan *gopacket.Packet, pppoeSessionId uint16, outgo
 				continue
 			}
 
-			fmt.Printf("[+] SYN received. Initialized connection with proxy. Sending SYNACK...\n")
+			fmt.Printf("[+] SYN received. Sending SYNACK...\n")
 
 			conn := connection.Connection{
 				SrcPort:        uint16(tcp.SrcPort),
@@ -852,7 +854,7 @@ func bridge(outgoingPort connection.BridgePort, incomingPort connection.BridgePo
 					pppoeSessionId = pppoe.SessionId
 					fmt.Printf("[+] Retreived PPPoE Session ID: %d. Starting proxy...\n", pppoeSessionId)
 
-					go handleTLSProxy(packetCh, pppoeSessionId, outgoingPort, incomingPort)
+					go handleTLSProxy(packetCh, pppoeSessionId, incomingPort, outgoingPort)
 				}
 			}
 		}
