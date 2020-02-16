@@ -1,6 +1,6 @@
 <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cwmp="urn:dslforum-org:cwmp-1-0">
 <SOAP-ENV:Header>
-<cwmp:ID SOAP-ENV:mustUnderstand="1">%CWMPID%</cwmp:ID>
+<cwmp:ID SOAP-ENV:mustUnderstand="1">%NONCE%</cwmp:ID>
 </SOAP-ENV:Header>
 <SOAP-ENV:Body>
 <cwmp:Inform>
@@ -17,7 +17,7 @@
 </EventStruct>
 </Event>
 <MaxEnvelopes>1</MaxEnvelopes>
-<CurrentTime>2020-02-14T14:54:07</CurrentTime>
+<CurrentTime>%DATE%</CurrentTime>
 <RetryCount>3</RetryCount>
 <ParameterList SOAP-ENC:arrayType="cwmp:ParameterValueStruct[8]">
 <ParameterValueStruct>
