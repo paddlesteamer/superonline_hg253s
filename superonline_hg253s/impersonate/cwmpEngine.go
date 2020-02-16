@@ -225,6 +225,6 @@ func RunCWMPEngine(ch chan CRAccount, serial string, macAddr string, extIP strin
 	go startChain(initialInform)
 }
 
-func ConnectImmediately() {
+func CWMPConnectImmediately() {
 	go startChain(requestedInform)
 }

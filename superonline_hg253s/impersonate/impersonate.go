@@ -13,5 +13,18 @@ func main() {
 	extIP := args[2]
 
 	cwmpCh := make(chan CRAccount)
+	conReqAccCh := make(chan CRAccount)
+	conReqCh := make(chan bool)
+
 	go RunCWMPEngine(cwmpCh, serial, macAddr, extIP)
+	go RunCRServer(conReqAccCh, conReqCh)
+
+	for {
+		select {
+		case acc := <-cwmpCh:
+			conReqAccCh <- acc
+		case <-conReqCh:
+			CWMPConnectImmediately()
+		}
+	}
 }
