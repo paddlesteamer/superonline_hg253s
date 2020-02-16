@@ -19,7 +19,7 @@ func NewSession() *Session {
 func (s *Session) SendRequest(payload []byte) (int, []byte, error) {
 	client := http.Client{}
 
-	req, err := http.NewRequest("POST", "https://acs.superonline.com", bytes.NewBuffer(payload))
+	req, err := http.NewRequest("POST", "http://acs.superonline.net:8015/cwmpWeb/WGCPEMgt", bytes.NewBuffer(payload))
 	if err != nil {
 		return 0, nil, fmt.Errorf("Error while creating http request: %s", err.Error())
 	}

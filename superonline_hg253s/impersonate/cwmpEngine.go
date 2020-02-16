@@ -36,6 +36,7 @@ var (
 )
 
 func sendInitialRequest(nonce string) (int, []byte, error) {
+	fmt.Printf("[+] Sending initial request\n")
 	reqBody, err := cwmp.GenerateInitialRequestBody(nonce, serialNo, externalIP)
 	if err != nil {
 		return 0, nil, fmt.Errorf("Error while generating intial request body: %s\n", reqBody)
@@ -50,6 +51,8 @@ func sendInitialRequest(nonce string) (int, []byte, error) {
 }
 
 func sendPeriodicInformRequest(nonce string) (int, []byte, error) {
+	fmt.Printf("[+] Sending periodic request\n")
+
 	reqBody, err := cwmp.GeneratePeriodicInformRequestBody(nonce, serialNo, externalIP)
 	if err != nil {
 		return 0, nil, fmt.Errorf("Error while generating periodic request body: %s\n", reqBody)
@@ -64,6 +67,8 @@ func sendPeriodicInformRequest(nonce string) (int, []byte, error) {
 }
 
 func sendRequestedInformRequest(nonce string) (int, []byte, error) {
+	fmt.Printf("[+] Answering to connection request\n")
+
 	reqBody, err := cwmp.GenerateRequestedInformRequestBody(nonce, serialNo, externalIP)
 	if err != nil {
 		return 0, nil, fmt.Errorf("Error while generating requestedInform request body: %s\n", reqBody)
@@ -78,6 +83,8 @@ func sendRequestedInformRequest(nonce string) (int, []byte, error) {
 }
 
 func sendSetSuccessInformRequest(nonce string) (int, []byte, error) {
+	fmt.Printf("[+] Sending param set successful message\n")
+
 	reqBody, err := cwmp.GenerateSetSuccessInformRequestBody(nonce)
 	if err != nil {
 		return 0, nil, fmt.Errorf("Error while generating set success request body: %s\n", reqBody)
@@ -92,6 +99,8 @@ func sendSetSuccessInformRequest(nonce string) (int, []byte, error) {
 }
 
 func sendRequestedParamsRequest(nonce string, macAddr string) (int, []byte, error) {
+	fmt.Printf("[+] Sending requested parameter values\n")
+
 	reqBody, err := cwmp.GenerateRequestedParamsRequestBody(nonce, macAddr)
 	if err != nil {
 		return 0, nil, fmt.Errorf("Error while generating set params request body: %s\n", reqBody)
@@ -106,6 +115,8 @@ func sendRequestedParamsRequest(nonce string, macAddr string) (int, []byte, erro
 }
 
 func sendEmptyInformRequest(nonce string) (int, []byte, error) {
+	fmt.Printf("[+] Sending empty request\n")
+
 	reqBody := make([]byte, 0)
 
 	statusCode, respBody, err := sess.SendRequest(reqBody)
@@ -163,6 +174,7 @@ func startChain(typ informType) {
 		responseType, xml, err := cwmp.ParseResponse(response)
 		if err != nil {
 			fmt.Printf("[-] Unknown or unsupported response: %s\n", err.Error())
+			return
 		}
 
 		nonce = xml.Header.CwmpId

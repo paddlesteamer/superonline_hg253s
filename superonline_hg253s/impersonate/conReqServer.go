@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/md5"
 	"fmt"
+	"io"
 	"net/http"
 
 	auth "github.com/abbot/go-http-auth"
@@ -34,5 +36,12 @@ func RunCRServer(confCh chan CRAccount, conReqCh chan bool) {
 
 	for {
 		account = <-confCh
+
+		fmt.Printf("[+] New account details: %s:%s\n", account.Username, account.Password)
+
+		h := md5.New()
+		io.WriteString(h, account.Password)
+		account.Password = fmt.Sprintf("%x", h.Sum(nil))
+
 	}
 }
