@@ -319,26 +319,12 @@ func generateHTTPResponse(resp *http.Response) ([]byte, error) {
 	return payload, nil
 }
 
-// TODO: use bytes.Index instead of manual search
 func processOutgoing(packet gopacket.Packet, wholePacket bool) ([]byte, error) {
 
 	tcp := packet.Layer(layers.LayerTypeTCP).(*layers.TCP)
 
 	payload := tcp.Payload
-	for i, b := range payload {
-		if b != 'H' {
-			continue
-		}
-
-		if i+13 >= len(payload) || bytes.Compare(payload[i+1:i+13], []byte("G253sC01B039")) != 0 {
-			continue
-		}
-
-		fmt.Printf("[+] Modifying outgoing payload...\n")
-		payload[i+11] = '3'
-		payload[i+12] = '5'
-		break
-	}
+	payload = bytes.Replace(payload, []byte("HG253sC01B039"), []byte("HG253sC01B035"), -1)
 
 	if !wholePacket {
 		return payload, nil
@@ -374,7 +360,6 @@ func processOutgoing(packet gopacket.Packet, wholePacket bool) ([]byte, error) {
 
 }
 
-// TODO: use bytes.Index instead of manual search
 func processIncoming(packet gopacket.Packet) ([]byte, error) {
 	eth := packet.Layer(layers.LayerTypeEthernet).(*layers.Ethernet)
 	pppoe := packet.Layer(layers.LayerTypePPPoE).(*layers.PPPoE)
@@ -382,27 +367,9 @@ func processIncoming(packet gopacket.Packet) ([]byte, error) {
 	ip := packet.Layer(layers.LayerTypeIPv4).(*layers.IPv4)
 	tcp := packet.Layer(layers.LayerTypeTCP).(*layers.TCP)
 
-	var nPayload []byte
 	payload := tcp.Payload
-	for i, b := range payload {
-		if b != 'h' {
-			continue
-		}
 
-		if i+11 >= len(payload) || bytes.Compare(payload[i+1:i+11], []byte("ttps://acs")) != 0 {
-			continue
-		}
-
-		fmt.Printf("[+] Modifying incoming payload...\n")
-		nPayload = make([]byte, len(payload)+4)
-		copy(nPayload, payload[:i])
-		copy(nPayload[i:], []byte("http://acs.superonline.net:8016"))
-		copy(nPayload[i+31:], payload[i+27:])
-		break
-	}
-	if nPayload != nil {
-		payload = nPayload
-	}
+	payload = bytes.Replace(payload, []byte("https://acs.superonline.net"), []byte("http://acs.superonline.net:8016"), -1)
 
 	tcp.SetNetworkLayerForChecksum(ip)
 
