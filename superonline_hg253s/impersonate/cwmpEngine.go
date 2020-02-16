@@ -9,6 +9,11 @@ import (
 
 type informType int
 
+type CRAccount struct {
+	Username string
+	Password string
+}
+
 const (
 	initialInform    = iota
 	periodicInform   = iota
@@ -19,6 +24,8 @@ const (
 )
 
 var (
+	crInformCh chan CRAccount
+
 	serialNo   string
 	macAddress string
 	externalIP string
@@ -162,8 +169,40 @@ func startChain(typ informType) {
 
 		if responseType == cwmp.GetParamRequest {
 
+			for _, param := range xml.Body.GetParameterValues.ParameterNames.Name {
+				if param != cwmp.MACAddressField {
+					fmt.Printf("[-] Unsupported field requested: %s\n", param)
+					continue
+				}
+			}
+
 			state = requestedParams
 		} else if responseType == cwmp.SetParamRequest {
+			acc := CRAccount{
+				Username: "",
+				Password: "",
+			}
+
+			for _, param := range xml.Body.SetParameterValues.ParameterList.Parameters {
+				if param.Name == cwmp.ConnectionRequestUsernameField {
+					acc.Username = param.Value
+				} else if param.Name == cwmp.ConnectionRequestPasswordField {
+					acc.Password = param.Value
+				} else if param.Name == cwmp.ManagementServerURLField {
+					fmt.Printf("[+] Management server URL: %s\n", param.Value)
+				} else if param.Name == cwmp.ManagementServerUsernameField {
+					fmt.Printf("[+] Management server username: %s\n", param.Value)
+				} else if param.Name == cwmp.ManagementServerPasswordField {
+					fmt.Printf("[+] Management server password: %s\n", param.Value)
+				} else {
+					fmt.Printf("[+] Ignored field: %s:%s\n", param.Name, param.Value)
+				}
+
+			}
+
+			if acc.Username != "" {
+				crInformCh <- acc
+			}
 
 			state = setSuccessInform
 		} else {
@@ -174,7 +213,9 @@ func startChain(typ informType) {
 
 }
 
-func RunCWMPEngine(serial string, macAddr string, extIP string) {
+func RunCWMPEngine(ch chan CRAccount, serial string, macAddr string, extIP string) {
+	crInformCh = ch
+
 	serialNo = serial
 	macAddress = macAddr
 	externalIP = extIP
@@ -182,4 +223,8 @@ func RunCWMPEngine(serial string, macAddr string, extIP string) {
 	sess = session.NewSession()
 
 	go startChain(initialInform)
+}
+
+func ConnectImmediately() {
+	go startChain(requestedInform)
 }

@@ -12,5 +12,6 @@ func main() {
 	macAddr := args[1]
 	extIP := args[2]
 
-	go RunCWMPEngine(serial, macAddr, extIP)
+	cwmpCh := make(chan CRAccount)
+	go RunCWMPEngine(cwmpCh, serial, macAddr, extIP)
 }
