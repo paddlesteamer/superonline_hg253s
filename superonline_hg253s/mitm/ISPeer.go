@@ -123,7 +123,7 @@ func processIncoming(packet gopacket.Packet) ([]byte, error) {
 	payload = bytes.Replace(payload, []byte("https://acs.superonline.net"), []byte("http://acs.superonline.net:8016"), -1)
 	payload = bytes.Replace(payload,
 		[]byte("InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.MACAddress"),
-		[]byte("InternetGatewayDevice"), -1)
+		[]byte("InternetGatewayDevice.UserInterface.X_Web.UserInfo.1.Userpassword"), -1)
 
 	tcp.SetNetworkLayerForChecksum(ip)
 
